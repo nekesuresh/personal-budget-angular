@@ -18,6 +18,13 @@
     <link rel="stylesheet" href="/main.css">
 </head>
 <body>
+    <style>
+        #myChart {
+            width: 300px !important;
+            height: 300px !important;
+            margin: 0 auto;
+            }
+    </style>
 
     <!-- This is a Semantic HTML Change -->
     <header class="menu">
@@ -43,7 +50,7 @@
 
             <!-- This is a Semantic HTML Change -->
             <figure>
-                <img src="https://thebudgeting.app/_next/static/media/logo.1604ed5c.webp" alt="App logo" width="150" height="150">
+                <img src="https://thebudgeting.app/_next/static/media/logo.1604ed5c.webp" alt="App logo" width="100" height="100">
                 <figcaption>Don't let money scare you! You got this!</figcaption>
             </figure>
 
@@ -82,6 +89,12 @@
                 </p>
             </article>
 
+            <article class="text-box" aria-labelledby="bar-chart">
+                <h2 id="bar-chart">Budget Overview</h2>
+                <div id="d3Chart"></div>
+                <button class="randomize">randomize</button>
+            </article>
+
         </div>
     </section>
 
@@ -95,6 +108,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.7/axios.min.js" integrity="sha512-DdX/YwF5e41Ok+AI81HI8f5/5UsoxCVT9GKYZRIzpLxb8Twz4ZwPPX+jQMwMhNQ9b5+zDEefc+dcvQoPWGNZ3g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 
     <script>
         var dataSource = {
@@ -129,10 +143,143 @@
                         dataSource.labels[i] = res.data.myBudget[i].title;
                     }
                     createChart();
+                    createD3Chart(res.data.myBudget);
                 });
         }
 
         getBudget();
+
+    </script>
+
+    <script>
+        var width = 800,
+            height = 400,
+            radius = Math.min(width, height) / 2;
+
+        var svg = d3.select("#d3Chart")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append("g")
+            .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
+
+       // var color = d3.scale.ordinal()
+       // .domain(["Eat out", "Rent", "Groceries", "Emergencies", "Gas", "Loan Repayment", "Savings", "Utilities"])
+       // .range(["#ff0000", "#ff7f00", "#ffff00", "#00ff00", "#0000ff", "#4b0082", "#8b00ff"]);
+
+        svg.append("g").attr("class", "slices");
+        svg.append("g").attr("class", "labels");
+        svg.append("g").attr("class", "lines");
+
+        // Pie setup
+        var pie = d3.pie().sort(null).value(function(d) { return d.value; });
+
+        var arc = d3.arc().outerRadius(radius * 0.8).innerRadius(radius * 0.4);
+        var outerArc = d3.arc().innerRadius(radius * 0.9).outerRadius(radius * 0.9);
+
+        var key = function(d) { return d.data.label; };
+
+        var color = d3.scaleOrdinal(d3.schemeCategory10);
+        function createD3Chart(budgetData) {
+            var data = budgetData.map(function(d) {
+                return { label: d.title, value: d.budget };
+            });
+            color.domain(data.map(function(d) { return d.label; }));
+            change(data);
+        }
+
+        d3.select(".randomize").on("click", function() {
+            change(randomData());
+        });
+
+        function randomData() {
+            return color.domain().map(function(label) {
+                return { label: label, value: Math.random() * 100 };
+            });
+        }
+
+        function midAngle(d) {
+            return d.startAngle + (d.endAngle - d.startAngle) / 2;
+        }
+
+        function change(data) {
+
+    var slice = svg.select(".slices").selectAll("path.slice").data(pie(data), key);
+
+    slice.exit().remove();
+
+    slice = slice.enter()
+        .append("path")
+        .attr("class", "slice")
+        .style("fill", function(d) { return color(d.data.label); })
+        .merge(slice);
+
+    slice.transition().duration(1000)
+        .attrTween("d", function(d) {
+            var i = d3.interpolate(this._current || d, d);
+            this._current = i(0);
+            return function(t) {
+                return arc(i(t));
+            };
+        });
+
+    var text = svg.select(".labels").selectAll("text").data(pie(data), key);
+
+    text.exit().remove();
+
+    text = text.enter()
+        .append("text")
+        .attr("dy", ".35em")
+        .text(function(d) { return d.data.label; })
+        .merge(text);
+
+    text.transition().duration(1000)
+        .attrTween("transform", function(d) {
+            var i = d3.interpolate(this._current || d, d);
+            this._current = i(0);
+            return function(t) {
+                var d2 = i(t);
+                var pos = outerArc.centroid(d2);
+                pos[0] = radius * (midAngle(d2) < Math.PI ? 1 : -1);
+                return "translate(" + pos + ")";
+            };
+        })
+        .styleTween("text-anchor", function(d) {
+            var i = d3.interpolate(this._current || d, d);
+            this._current = i(0);
+            return function(t) {
+                var d2 = i(t);
+                return midAngle(d2) < Math.PI ? "start" : "end";
+            };
+        });
+
+    var polyline = svg.select(".lines").selectAll("polyline").data(pie(data), key);
+
+    polyline.exit().remove();
+
+    polyline = polyline.enter()
+        .append("polyline")
+        .style("stroke", "black")
+        .style("stroke-width", 1)  
+        .style("fill", "none")    
+        .style("opacity", 1)     
+        .merge(polyline);
+
+    polyline.transition().duration(1000)
+        .attrTween("points", function(d) {
+            var i = d3.interpolate(this._current || d, d);
+            this._current = i(0);
+            return function(t) {
+                var d2 = i(t);
+                var pos = outerArc.centroid(d2);
+                pos[0] = radius * (midAngle(d2) < Math.PI ? 1 : -1);
+                return [arc.centroid(d2), outerArc.centroid(d2), pos];
+            };
+        });
+    }
+
+</script>
+
     </script>
 </body>
 </html>
